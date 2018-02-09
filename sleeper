@@ -1,0 +1,7 @@
+#!/bin/bash
+
+# $1 = nap time
+# $2 = pid file
+
+stdbuf -oL echo $$ > $2
+sleep $1

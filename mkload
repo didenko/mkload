@@ -1,0 +1,74 @@
+#!/bin/bash
+
+# $1 = number of writers
+# $2 = number of readers
+# $3 = data dir
+# $4 = timestamps file
+
+export writer_count=$1
+export reader_count=$2
+fifo=$3
+
+function reader() {
+# $1 = nap time
+# $2 = file to cat
+	while true
+	do
+		(
+			cat $2 |
+			gzip --to-stdout >/dev/null
+			sleep $1
+		) & wait $! || return
+	done
+}
+
+function writer() {
+# $1 = nap time
+# $2 = file to cat
+	while true
+	do
+		(
+			byte_count=$(( ${RANDOM} % ${writer_count} ))
+			dd iflag=count_bytes count=${byte_count} if=/dev/urandom 2>/dev/null |
+			base64 > $2
+			sleep $1
+		) & wait $! || return
+	done
+}
+
+function cleanup() {
+	for (( n=0; n<10; n++))
+	do
+		kill -TERM ${*} >/dev/null 2>&1
+		sleep 1
+	done
+}
+
+mkfifo ${fifo} || {
+	echo "Failed to create the ${fifo} FIFO" 1>&2
+	exit 1
+}
+
+echo "Started:  $(date +%s)" >$4
+
+pids=""
+
+for (( n=0; n<reader_count; n++))
+do
+	(
+		reader $(( ${RANDOM} % 10 )) ${fifo}
+	) &
+	pids="${pids} $!"
+done
+
+for (( n=0; n<writer_count; n++))
+do
+	(
+		writer $(( ${RANDOM} % 3 )) ${fifo}
+	) &
+	pids="${pids} $!"
+done
+
+trap "cleanup ${pids}; echo \"Finished: \$(date +%s)\" >>$4" TERM INT
+
+wait
